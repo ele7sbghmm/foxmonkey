@@ -1,0 +1,13 @@
+html, body {
+    background-color: #111;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0;
+}
+canvas {
+    position: absolute;
+    /* border: 2px solid #fff; */
+    height: 100%;
+}

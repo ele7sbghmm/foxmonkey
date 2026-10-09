@@ -1,0 +1,1 @@
+#include "thingamajig/config.h"
