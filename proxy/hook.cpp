@@ -1,16 +1,18 @@
 #define WIN32_MEAN_AND_LEAN
 #include <windows.h>
 
-struct IDirect3D8; typedef IDirect3D8*(__stdcall*Create_t)(UINT);
+struct IDirect3D8;
+
+typedef IDirect3D8*(__stdcall*Create_t)(UINT);
 static Create_t original = nullptr;
 static HMODULE hmodule = nullptr;
 
-extern "C" IDirect3D8* __stdcall Create(UINT SDKVersion) {
+extern "C" IDirect3D8* __stdcall Direct3DCreate8(UINT SDKVersion) {
     if (!original) {
         char buf[MAX_PATH];
         UINT len = GetSystemDirectoryA(buf, MAX_PATH);
         if (!len) return nullptr;
-        buf[MAX_PATH] = '\0';
+        buf[MAX_PATH-1] = '\0';
         strcat_s(buf, sizeof(buf), "\\d3d8.dll");
 
         hmodule = LoadLibraryA(buf);
