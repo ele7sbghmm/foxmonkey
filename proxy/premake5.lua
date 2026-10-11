@@ -2,7 +2,7 @@ workspace 'd3d8_workspace'
     configurations { 'Debug' }
     architecture 'x86'
     location 'build'
-    cppdialect 'C++23'
+    cppdialect 'C++26'
 
 project "d3d8_project"
     kind 'SharedLib'
