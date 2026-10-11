@@ -12,8 +12,13 @@ project "d3d8_project"
     targetname 'd3d8'
     targetextension '.dll'
 
-    files { 'hook.cpp' }
+    includedirs {
+        "vencor/imgui"
+        "vendor/MinHook_134_lib/include"
+    }
+
+    files { 'src/**.cpp', 'src/**.h' }
     filter "action:vs*"
-        linkoptions { '/DEF:"../d3d8.def"' }
+        linkoptions { '/DEF:"../src/d3d8.def"' }
         debugcommand "C:/Users/m/Documents/foxmonkey/shar/Simpsons-Final.exe"
         debugdir "../shar"
