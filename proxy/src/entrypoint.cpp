@@ -1,5 +1,10 @@
+#include "hooks.h"
+
 #define WIN32_MEAN_AND_LEAN
 #include <windows.h>
+
+#include "MinHook.h"
+#pragma comment(lib, "libMinHook.x86.lib")
 
 struct IDirect3D8;
 
@@ -22,6 +27,9 @@ extern "C" IDirect3D8* __stdcall Direct3DCreate8(UINT SDKVersion) {
             (GetProcAddress(hmodule, "Direct3DCreate8"));
         if (!original) return nullptr;
     }
+
+    MH_Initialize();
+    hooks::install();
 
     return original(SDKVersion);
 }

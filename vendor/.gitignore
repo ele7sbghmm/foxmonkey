@@ -1,3 +1,4 @@
+min-dx8-sdk/*
 MinHook_134_lib/*
 imgui/*
 !imgui/imgui_impl_dx8.h
