@@ -6,6 +6,8 @@
 #include "backends/imgui_impl_dx8.h"
 
 void Gui::Frame() {
+    Initialize();
+
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 

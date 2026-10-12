@@ -15,7 +15,7 @@ struct IDirect3DDevice8;
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 class Gui {
 public:
-    static LRESULT WinProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    static LRESULT WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
     }
     static void Frame();
@@ -27,9 +27,11 @@ public:
         if (!io.BackendPlatformUserData)
             ImGui_ImplWin32_Init(GetForegroundWindow());
         
-        if (!io.BackendRendererUserData)
-            if (shar::p3d::display->device)
-                ImGui_ImplWin32_Init(shar::p3d::display->device);
+        if (!io.BackendRendererUserData) {
+            auto* ctx = shar::d3dContext::get();
+            if (ctx && ctx->device)
+                ImGui_ImplWin32_Init(ctx->device);
+        }
     }
     static void Shutdown() {
         if (ImGui::GetCurrentContext())
