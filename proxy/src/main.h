@@ -30,7 +30,7 @@ public:
         if (!io.BackendRendererUserData) {
             auto* ctx = shar::d3dContext::get();
             if (ctx && ctx->device)
-                ImGui_ImplWin32_Init(ctx->device);
+                ImGui_ImplDX8_Init(ctx->device);
         }
     }
     static void Shutdown() {
@@ -38,7 +38,4 @@ public:
             if (ImGui::GetIO().BackendRendererUserData)
                 ImGui_ImplDX8_Shutdown();
     }
-
-    bool use_fake_elapsed = false;
-    unsigned fake_elapsed = 10;
 };

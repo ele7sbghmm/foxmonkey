@@ -3,17 +3,26 @@
 #define WIN32_MEAN_AND_LEAN
 #include <windows.h>
 
-#include "MinHook.h"
+#include <d3d8.h>
+#include <MinHook.h>
 #pragma comment(lib, "libMinHook.x86.lib")
 
-struct IDirect3D8;
+typedef HRESULT(__stdcall*CreateDevice_t)(IDirect3D8*,UINT,D3DDEVTYPE,HWND,DWORD,D3DPRESENT_PARAMETERS*,IDirect3DDevice8**);
+static CreateDevice_t oCreateDevice = nullptr;
+HRESULT __stdcall hCreateDevice(IDirect3D8* d3d, UINT Adapter, D3DDEVTYPE DeviceType,
+        HWND hWnd, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters,
+        IDirect3DDevice8** ppReturnedDeviceInterface) {
+    HRESULT out = oCreateDevice(d3d, Adapter, DeviceType, hWnd, BehaviorFlags, pPresentationParameters, ppReturnedDeviceInterface);
+    // 0x08ace460
+    IDirect3DDevice8* device = *ppReturnedDeviceInterface;
+    return out;
+}
 
-typedef IDirect3D8*(__stdcall*Create_t)(UINT);
-static Create_t original = nullptr;
+typedef IDirect3D8*(__stdcall*Direct3DCreate8_t)(UINT);
+static Direct3DCreate8_t oDirect3DCreate8 = nullptr;
 static HMODULE hmodule = nullptr;
-
 extern "C" IDirect3D8* __stdcall Direct3DCreate8(UINT SDKVersion) {
-    if (!original) {
+    if (!oDirect3DCreate8) {
         char buf[MAX_PATH];
         UINT len = GetSystemDirectoryA(buf, MAX_PATH);
         if (!len) return nullptr;
@@ -23,15 +32,24 @@ extern "C" IDirect3D8* __stdcall Direct3DCreate8(UINT SDKVersion) {
         hmodule = LoadLibraryA(buf);
         if (!hmodule) return nullptr;
 
-        original = reinterpret_cast<Create_t>
+        oDirect3DCreate8 = reinterpret_cast<Direct3DCreate8_t>
             (GetProcAddress(hmodule, "Direct3DCreate8"));
-        if (!original) return nullptr;
+        if (!oDirect3DCreate8) return nullptr;
     }
 
     MH_Initialize();
     hooks::install();
 
-    return original(SDKVersion);
+    IDirect3D8* d3d = oDirect3DCreate8(SDKVersion);
+    void** vftable = *(void***)d3d;
+
+    DWORD old;
+    VirtualProtect(&vftable[15], 4, PAGE_EXECUTE_READWRITE, &old);
+    oCreateDevice = (CreateDevice_t)vftable[15];
+    vftable[15] = &hCreateDevice;
+    VirtualProtect(&vftable[15], 4, old, &old);
+
+    return d3d;
 }
 
 BOOL APIENTRY DllMain(HMODULE, DWORD, LPVOID) { return TRUE; }

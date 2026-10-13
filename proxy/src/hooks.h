@@ -2,6 +2,7 @@
 
 #include "main.h"
 #include "shar.h"
+#include "fps.h"
 
 #include "MinHook.h"
 
@@ -10,7 +11,7 @@ typedef HWND__* HWND;
 
 namespace hooks {
     namespace WndProc {
-        inline void* a = (void*)0x444700;
+        inline void* a = (void*)0x444721;
         inline void* o = nullptr;
         inline void __stdcall wndproc(HWND hwnd, unsigned int msg, unsigned int wparam, long lparam) {
             Gui::WndProc(hwnd, msg, wparam, lparam);
@@ -35,7 +36,13 @@ namespace hooks {
         inline void* o = nullptr;
         inline __declspec(naked) void hk() {
             __asm {
-                mov edi, 20
+                pushad
+                push edi
+                lea ecx, fps
+                mov eax, [Fps::Hook]
+                call eax
+                mov [esp + 0], eax
+                popad
                 jmp o
             }
         }

@@ -17,12 +17,12 @@ namespace shar {
     struct GameFlow {
         u8 pad[8];
         ContextEnum mCurrentContext;
-        static auto* get() { return reinterpret_cast<GameFlow*>(0x6c9014); }
+        static auto* get() { return *reinterpret_cast<GameFlow**>(0x6c9014); }
     };
 
     struct d3dContext {
         u8 pad[0x120];
         IDirect3DDevice8* device;
-        static auto* get() { return reinterpret_cast<d3dContext*>(0x65ef5c); }
+        static auto* get() { return *reinterpret_cast<d3dContext**>(0x65ef5c); }
     };
 }
