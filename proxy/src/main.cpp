@@ -28,8 +28,10 @@ void Gui::Frame() {
     ImGui::NewFrame();
 
     ImGui::Begin("###begin");
-    ImGui::Checkbox("use fake elapsed", &fps.use_fake_elapsed);
-    ImGui::SliderInt("elapsed", (int*)&fps.fake_elapsed, 1, 100);
+    ImGui::Checkbox("use fake gameflow", &fps.use_fake_elapsed_gameflow);
+    ImGui::Checkbox("use fake render", &fps.use_fake_elapsed_renderflow);
+    ImGui::SliderInt("elapsed gameflow", (int*)&fps.fake_elapsed_gameflow, 1, 100);
+    ImGui::SliderInt("elapsed render", (int*)&fps.fake_elapsed_renderflow, 0, 100);
     ImGui::End();
 
     ImGui::Render();
