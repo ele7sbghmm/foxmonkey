@@ -13,7 +13,7 @@ HRESULT __stdcall hCreateDevice(IDirect3D8* d3d, UINT Adapter, D3DDEVTYPE Device
         HWND hWnd, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters,
         IDirect3DDevice8** ppReturnedDeviceInterface) {
     HRESULT out = oCreateDevice(d3d, Adapter, DeviceType, hWnd, BehaviorFlags, pPresentationParameters, ppReturnedDeviceInterface);
-    // 0x08ace460
+
     IDirect3DDevice8* device = *ppReturnedDeviceInterface;
     return out;
 }

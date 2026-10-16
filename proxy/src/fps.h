@@ -2,10 +2,9 @@
 
 class Fps {
 public:
-	bool use_fake_elapsed_gameflow = false;
-	bool use_fake_elapsed_renderflow = true;
-	unsigned fake_elapsed_gameflow = 1;
-	unsigned fake_elapsed_renderflow = 1000;
+	bool use_fake_elapsed = false;
+	unsigned fake_elapsed = 1;
+	unsigned frame_count = 1;
 };
 
 inline Fps fps{};

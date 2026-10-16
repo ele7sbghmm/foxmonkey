@@ -30,15 +30,16 @@ namespace hooks {
                 jmp o
             }
         }
-        inline void install() { MH_CreateHook(a, (void*)hk, (void**)&o); }
+        inline void install() { MH_CreateHook(a, (void*)hk, &o); }
     }
 
     namespace GameFlow_OnTimerDone {
         inline void* a = (void*)0x432e74;
         inline void* o = nullptr;
         inline void __cdecl fn(Reg* reg) {
-            if (fps.use_fake_elapsed_gameflow)
-                reg->esi = fps.fake_elapsed_gameflow;
+            fps.frame_count++;
+            if (fps.use_fake_elapsed)
+                reg->esi = fps.fake_elapsed;
         }
         inline __declspec(naked) void hk() {
             __asm {
@@ -50,7 +51,7 @@ namespace hooks {
                 jmp o
             }
         }
-        inline void install() { MH_CreateHook(a, (void*)hk, (void**)&o); }
+        inline void install() { MH_CreateHook(a, (void*)hk, &o); }
     }
     
     namespace DrawGui {
@@ -67,14 +68,30 @@ namespace hooks {
                 jmp o
             }
         }
-        inline void install() { MH_CreateHook(a, (void*)hk, (void**)&o); }
+        inline void install() { MH_CreateHook(a, (void*)hk, &o); }
+    }
+
+    namespace radGetMilli {
+        inline void* a = (void*)0x56294b;
+        inline void* o = nullptr;
+        inline unsigned __cdecl fn() {
+            return fps.frame_count;
+        }
+        inline __declspec(naked) void hk() {
+            __asm {
+                call fn
+                leave
+                ret
+            }
+        }
+        inline void install() { MH_CreateHook(a, (void*)hk, &o); }
     }
         
     void install() {
         WndProc::install();
         GameFlow_OnTimerDone::install();
-        RenderFlow_OnTimerDone::install();
         DrawGui::install();
+        radGetMilli::install();
         MH_EnableHook(MH_ALL_HOOKS);
     }
 }
