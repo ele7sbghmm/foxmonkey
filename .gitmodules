@@ -1,0 +1,3 @@
+[submodule "vendor/rl-tools"]
+	path = vendor/rl-tools
+	url = https://github.com/rl-tools/rl-tools.git

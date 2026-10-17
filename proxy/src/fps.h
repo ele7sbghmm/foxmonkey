@@ -2,9 +2,8 @@
 
 class Fps {
 public:
-	bool use_fake_elapsed = false;
-	unsigned fake_elapsed = 1;
-	unsigned frame_count = 1;
+	bool use_time_scale = true;
+	double time_scale = .5;
 };
 
 inline Fps fps{};

@@ -7,7 +7,16 @@
 #include <MinHook.h>
 #pragma comment(lib, "libMinHook.x86.lib")
 
-typedef HRESULT(__stdcall*CreateDevice_t)(IDirect3D8*,UINT,D3DDEVTYPE,HWND,DWORD,D3DPRESENT_PARAMETERS*,IDirect3DDevice8**);
+typedef BOOL(__stdcall* QueryPerformanceCounter_t)(LARGE_INTEGER*);
+static QueryPerformanceCounter_t oQueryPerformanceCounter = nullptr;
+BOOL __stdcall hQueryPerformanceCounter(LARGE_INTEGER* lpPerformanceCount) {
+    BOOL ret = oQueryPerformanceCounter(lpPerformanceCount);
+    if (fps.use_time_scale)
+        lpPerformanceCount->QuadPart = static_cast<LONGLONG>(lpPerformanceCount->QuadPart * fps.time_scale);
+    return ret;
+}
+
+typedef HRESULT(__stdcall* CreateDevice_t)(IDirect3D8*,UINT,D3DDEVTYPE,HWND,DWORD,D3DPRESENT_PARAMETERS*,IDirect3DDevice8**);
 static CreateDevice_t oCreateDevice = nullptr;
 HRESULT __stdcall hCreateDevice(IDirect3D8* d3d, UINT Adapter, D3DDEVTYPE DeviceType,
         HWND hWnd, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters,
@@ -37,9 +46,6 @@ extern "C" IDirect3D8* __stdcall Direct3DCreate8(UINT SDKVersion) {
         if (!oDirect3DCreate8) return nullptr;
     }
 
-    MH_Initialize();
-    hooks::install();
-
     IDirect3D8* d3d = oDirect3DCreate8(SDKVersion);
     void** vftable = *(void***)d3d;
 
@@ -48,6 +54,16 @@ extern "C" IDirect3D8* __stdcall Direct3DCreate8(UINT SDKVersion) {
     oCreateDevice = (CreateDevice_t)vftable[15];
     vftable[15] = &hCreateDevice;
     VirtualProtect(&vftable[15], 4, old, &old);
+
+
+    MH_Initialize();
+    MH_CreateHookApi(L"kernel32.dll",
+        "QueryPerformanceCounter",
+        hQueryPerformanceCounter,
+        (void**)&oQueryPerformanceCounter);
+
+    hooks::install();
+    MH_EnableHook(MH_ALL_HOOKS);
 
     return d3d;
 }

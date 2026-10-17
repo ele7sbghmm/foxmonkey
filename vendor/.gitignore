@@ -1,5 +1,7 @@
+libtorch/*
 min-dx8-sdk/*
 MinHook_134_lib/*
 imgui/*
+!imgui/imgui.cpp
 !imgui/backends/imgui_impl_dx8.h
 !imgui/backends/imgui_impl_dx8.cpp

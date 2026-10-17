@@ -13,9 +13,12 @@ project "d3d8_project"
     targetextension '.dll'
 
     includedirs {
+        '../vendor',
         '../vendor/imgui',
         '../vendor/MinHook_134_lib/include',
-        '../vendor/min-dx8-sdk'
+        '../vendor/min-dx8-sdk',
+        '../vendor/rl-tools/include',
+        'C:/Program Files/HDF_Group/HDF5/2.2.0/include'
     }
     libdirs { '../vendor/MinHook_134_lib/lib' }
 
