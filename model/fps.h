@@ -10,6 +10,8 @@
 #include <emmintrin.h>
 #endif
 
+#include "radtime.hpp"
+
 class FPS {
 public:
     FPS() = default;
@@ -17,9 +19,29 @@ public:
     void Start();
     void End();
     void Wait() const;
+    unsigned radMirco64() const {
+        if (!use_fake_elapsed)
+            return radTimeGetMicroseconds64();
+        return static_cast<int64_t>(radMicro());
+    }
+    unsigned radMicro() const {
+        if (!use_fake_elapsed)
+            return radTimeGetMicroseconds();
+        return step * frame_count * 1'000;
+    }
+    unsigned radMilli() const {
+        if (!use_fake_elapsed)
+            return radTimeGetMilliseconds();
+        return step * frame_count;
+    }
+    unsigned radSecond() const {
+        if (!use_fake_elapsed)
+            return radTimeGetSeconds();
+        return step * frame_count / 1'000;
+    }
 
     bool use_fake_elapsed = false;
-    unsigned fake_elapsed = 8;
+    unsigned step = 8;
     float target_fps = 200.;
     bool cap_fps = false;
 
@@ -30,8 +52,9 @@ public:
     std::chrono::steady_clock::time_point frame_end{};
 
     long long second{};
+    uint32_t frame_count = 0;
     uint32_t frames_this_second = 0;
     uint32_t total_frames_last_second = 0;
 };
 
-inline FPS fps{};
+extern FPS fps;

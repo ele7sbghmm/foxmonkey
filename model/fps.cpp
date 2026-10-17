@@ -1,5 +1,7 @@
 #include "model/fps.h"
 
+FPS fps{};
+
 void FPS::SetFPS(float fps) {
     if (fps > 0) {
         target_fps = fps;
@@ -9,6 +11,7 @@ void FPS::SetFPS(float fps) {
 
 void FPS::Start() {
     frame_start = std::chrono::steady_clock::now();
+    frame_count++;
 }
 
 void FPS::End() {

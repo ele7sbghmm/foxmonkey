@@ -4,6 +4,15 @@
 #include "gameflow/gameflow.h"
 #include "render/RenderManager/RenderManager.h"
 
+Gui gui{};
+
+bool Gui::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (ImGui::GetCurrentContext() == nullptr)
+        return false;
+
+    ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam);
+    return ImGui::GetIO().WantCaptureMouse;
+}
 void Gui::Initialize() const {
     if (ImGui::GetCurrentContext() == nullptr)
         ImGui::CreateContext();
@@ -11,7 +20,7 @@ void Gui::Initialize() const {
     ImGuiIO& io = ImGui::GetIO();
     if (io.BackendRendererUserData == nullptr) {
         auto device = reinterpret_cast<d3dDisplay*>(p3d::display)->GetD3DDevice();
-        ImGui_ImplDX9_Init(device);
+        ImGui_ImplDX8_Init(device);
     }
 
     if (io.BackendPlatformUserData == nullptr) {
@@ -27,21 +36,20 @@ void Gui::Shutdown() const {
         //if (io.BackendPlatformUserData != nullptr)
             //ImGui_ImplWin32_Shutdown();
         if (io.BackendRendererUserData != nullptr)
-            ImGui_ImplDX9_Shutdown();
+            ImGui_ImplDX8_Shutdown();
     }
 }
 
 void Gui::Frame() {
     auto* gf = GetGameFlow();
-    if (!gf) return;
-
-    auto ctx = gf->GetCurrentContext();
-    if (
-        ctx != CONTEXT_GAMEPLAY
-        && ctx != CONTEXT_FRONTEND
-        && ctx != CONTEXT_LOADING_GAMEPLAY
-        && ctx != CONTEXT_FRONTEND
-        ) return;
+    if (gf != nullptr) {
+        ContextEnum ctx = gf->GetCurrentContext();
+        if (ctx != CONTEXT_GAMEPLAY
+            && ctx != CONTEXT_FRONTEND
+            && ctx != CONTEXT_LOADING_GAMEPLAY
+            && ctx != CONTEXT_FRONTEND
+            ) return;
+    }
 
     Initialize();
 
@@ -52,7 +60,7 @@ void Gui::Frame() {
     BeginEnd();
 
     ImGui::Render();
-    ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
+    ImGui_ImplDX8_RenderDrawData(ImGui::GetDrawData());
 }
 
 void Gui::BeginEnd() {
@@ -60,10 +68,13 @@ void Gui::BeginEnd() {
     sprintf_s(buf, sizeof(buf), "Sec: %4d   Dur: %.2f###begin", fps.total_frames_last_second, fps.target_duration.count());
     ImGui::Begin(buf);
 
-    ImGui::Checkbox("Cap FPS", &fps.cap_fps);
-    float f = fps.target_fps;
-    if (ImGui::SliderFloat("FPS: ", &f, 5., 500.))
-        fps.SetFPS(f);
+    ImGui::Checkbox("Fake: ", &fps.use_fake_elapsed);
+    ImGui::SliderInt("Step: ", (int*)&fps.step, 1, 20);
+
+    ImGui::Checkbox("Cap FPS: ", &fps.cap_fps);
+    if (ImGui::SliderFloat("FPS: ", &fps.target_fps, 1., 500.))
+        fps.SetFPS(fps.target_fps);
+    
     if (ImGui::Button("Dump")) {
         RenderManager* rm = GetRenderManager();
         if (rm)
