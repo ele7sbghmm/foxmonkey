@@ -74,77 +74,12 @@
 #include <worldsim/character/character.h>
 
 #include <gameflow/gameflow.h>
-#include <radtime.hpp>
 
 using namespace sim;
 
 // The force required to knock a collectible off
 const float MIN_FORCE_DETACH_COLLECTIBLES = 30000.0f;
-size_t Vehicle::s_InstanceCount = 0;
-size_t Vehicle::s_TotalInstanceCount = 0;
-Vehicle::InstanceRecord Vehicle::s_InstanceRecords[Vehicle::MAX_TRACKED_INSTANCES];
-size_t Vehicle::s_InstanceRecordCount = 0;
 
-void Vehicle::RefreshInstanceRecord(Vehicle* v)
-{
-    if (!v)
-    {
-        return;
-    }
-
-    for (size_t i = 0; i < s_InstanceRecordCount; ++i)
-    {
-        InstanceRecord& rec = s_InstanceRecords[i];
-        if (rec.alive && rec.instanceId == v->m_InstanceId && rec.ptr == v)
-        {
-            if (v->mName && v->mName[0] != '\0')
-            {
-                strncpy(rec.name, v->mName, sizeof(rec.name) - 1);
-                rec.name[sizeof(rec.name) - 1] = '\0';
-            }
-            rec.vehicleType = v->mVehicleType;
-            rec.locoType = v->mLoco;
-            rec.lastCentralIndex = v->mVehicleCentralIndex;
-            rec.lastRefCount = v->GetRefCount();
-            rec.hitPoints = v->mHitPoints;
-            rec.maxHitPoints = v->mDesignerParams.mHitPoints;
-            rec.triggerActive = v->mTriggerActive;
-            rec.playerCar = v->mbPlayerCar;
-            rec.userDriving = v->mUserDrivingCar;
-            rec.createdByParkedCarManager = v->mCreatedByParkedCarManager;
-            rec.vehicleDestroyed = v->mVehicleDestroyed;
-
-            if (v->mpEventLocator)
-            {
-                rec.actionButtonId = v->mpEventLocator->GetData();
-                ActionButton::ButtonHandler* bh = GetActionButtonManager()->GetActionByIndex(rec.actionButtonId);
-                ActionButton::GetInCar* gic = dynamic_cast<ActionButton::GetInCar*>(bh);
-                if (gic)
-                {
-                    rec.lastGetInCarVehicleId = gic->GetVehicleId();
-                }
-            }
-            break;
-        }
-    }
-}
-
-void Vehicle::ClearDeletedInstanceRecords()
-{
-    size_t writeIdx = 0;
-    for (size_t readIdx = 0; readIdx < s_InstanceRecordCount; ++readIdx)
-    {
-        if (s_InstanceRecords[readIdx].alive)
-        {
-            if (writeIdx != readIdx)
-            {
-                s_InstanceRecords[writeIdx] = s_InstanceRecords[readIdx];
-            }
-            ++writeIdx;
-        }
-    }
-    s_InstanceRecordCount = writeIdx;
-}
 
 //=============================================================================
 // Vehicle::Vehicle
@@ -166,34 +101,6 @@ Vehicle::Vehicle() :
     mCharacterSheetCarIndex( -1 ),
     m_IsSimpleShadow( true )
 {
-    m_InstanceId = s_TotalInstanceCount++;
-    s_InstanceCount++;
-
-    if (s_InstanceRecordCount >= MAX_TRACKED_INSTANCES)
-    {
-        ClearDeletedInstanceRecords();
-        if (s_InstanceRecordCount >= MAX_TRACKED_INSTANCES)
-        {
-            memmove(&s_InstanceRecords[0], &s_InstanceRecords[1], sizeof(InstanceRecord) * (MAX_TRACKED_INSTANCES - 1));
-            s_InstanceRecordCount = MAX_TRACKED_INSTANCES - 1;
-        }
-    }
-
-    InstanceRecord& rec = s_InstanceRecords[s_InstanceRecordCount++];
-    memset(&rec, 0, sizeof(InstanceRecord));
-    rec.instanceId = m_InstanceId;
-    rec.ptr = this;
-    rec.alive = true;
-    strcpy(rec.name, "<uninitialized>");
-    rec.vehicleType = VT_LAST;
-    rec.locoType = VL_PHYSICS;
-    rec.lastCentralIndex = -1;
-    rec.actionButtonId = -1;
-    rec.lastGetInCarVehicleId = -1;
-    rec.lastRefCount = GetRefCount();
-    rec.createdTick = radTimeGetMilliseconds();
-    rec.deletedTick = 0;
-
     mTranslucent = true;
     mDrawVehicle = true;
 
@@ -701,7 +608,6 @@ bool Vehicle::Init( const char* name, SimEnvironment* se, VehicleLocomotionType 
     // actually any use in this result?
     // might as well just assert.
     //return result;
-    RefreshInstanceRecord(this);
     return true;
 }
 
@@ -1471,23 +1377,6 @@ void Vehicle::SetupRadDebugWatchStuff()
 //=============================================================================
 Vehicle::~Vehicle()
 {
-    RefreshInstanceRecord(this);
-    for (size_t i = 0; i < s_InstanceRecordCount; ++i)
-    {
-        InstanceRecord& rec = s_InstanceRecords[i];
-        if (rec.alive && rec.instanceId == m_InstanceId && rec.ptr == this)
-        {
-            rec.alive = false;
-            rec.lastRefCount = 0;
-            rec.deletedTick = radTimeGetMilliseconds();
-            break;
-        }
-    }
-    if (s_InstanceCount > 0)
-    {
-        s_InstanceCount--;
-    }
-
     if(GetGameplayManager()->GetCurrentVehicle() == this)
     {
         GetGameplayManager()->UnregisterVehicleHUDIcon();

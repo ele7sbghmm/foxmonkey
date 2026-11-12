@@ -1,6 +1,3 @@
-#include "gui.h"
-#include "pddi/dx8/display.hpp"
-
 //===========================================================================
 // Copyright (C) 2002 Radical Entertainment Ltd.  All rights reserved.
 //
@@ -1627,14 +1624,10 @@ void Win32Platform::InitializeContext()
         //
         mpPlatform->SetActiveContext( mpContext );
         p3d::pddi->EnableZBuffer( true );
-
-        auto* d3d = reinterpret_cast<d3dDisplay*>(mpContext->GetDisplay());
-        Gui::Init(mhWnd, d3d->GetD3DDevice());
     }
     else
     {
         // Update the display settings.
-        Gui::ResetDevice();
         mpContext->GetDisplay()->InitDisplay( &init );
     }
 }
@@ -2117,8 +2110,6 @@ void Win32Platform::TrackMouseTimerProc( HWND hWnd, UINT uMsg, UINT idEvent, DWO
 
 LRESULT Win32Platform::WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    Gui::WndProc(hwnd, message, wParam, lParam);
-
 #if defined( PRINT_WINMESSAGES ) && defined( RAD_DEBUG )
     rDebugPrintf( "Windows Message: 0x%08x (%s) [0x%08x, 0x%08x]\n", message, GetMessageName(message), wParam, lParam  ); 
 #endif

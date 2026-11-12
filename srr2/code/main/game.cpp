@@ -485,10 +485,6 @@ void Game::Run()
 #endif
 
     unsigned time = radTimeGetMilliseconds();
-    unsigned time_REAL = radTimeGetMilliseconds_REAL();
-    unsigned nextSimulTime = time_REAL + 1'000 / 20;
-    unsigned elapsedSimul = 0;
-    bool simulThisFrame = true;
     while( !mExitNow )
     {
         DEMOPROFILE( g_DemoProfiler.Start(PROFILE_CHANNEL_ALL); )
@@ -497,21 +493,10 @@ void Game::Run()
 
         BEGIN_PROFILE( "GameLoop" )
 
-        unsigned newTime =  radTimeGetMilliseconds_REAL();
+        unsigned newTime =  radTimeGetMilliseconds();
         unsigned elapsed = newTime - time;
         time = newTime;
 
-        unsigned newTime_REAL = radTimeGetMilliseconds_REAL();
-        unsigned elapsed_REAL = newTime_REAL - time_REAL;
-        time_REAL = newTime_REAL;
-
-        simulThisFrame = false;
-        if (time_REAL > nextSimulTime) {
-            simulThisFrame = true;
-            unsigned old = nextSimulTime;
-            nextSimulTime = time_REAL + 1'000 / 20;
-            elapsedSimul = nextSimulTime - old;
-        }
         //
         // Service the windows message loop.
         //
@@ -551,14 +536,13 @@ void Game::Run()
         {
             DEMOPROFILE( g_DemoProfiler.Start(PROFILE_CHANNEL_AI); )
             mpTimerList->Service(); //nv
-            if (simulThisFrame)
-                mpGameFlow->OnTimerDone(elapsedSimul, NULL);
+            mpGameFlow->OnTimerDone(elapsed, NULL);
             DEMOPROFILE( g_DemoProfiler.Stop(PROFILE_CHANNEL_AI); )
 
             if( !mExitNow )
             {
                 DEMOPROFILE( g_DemoProfiler.Start(PROFILE_CHANNEL_RENDER); )
-                mpRenderFlow->OnTimerDone(elapsed_REAL, NULL);
+                mpRenderFlow->OnTimerDone(elapsed, NULL);
                 DEMOPROFILE( g_DemoProfiler.Stop(PROFILE_CHANNEL_RENDER); )
             }
         }
@@ -566,8 +550,7 @@ void Game::Run()
         {                                         // need to update input manager
             if (InputManager::GetInstance())
             {
-                if (simulThisFrame)
-                    InputManager::GetInstance()->Update(elapsedSimul);
+                InputManager::GetInstance()->Update( elapsed );
             }
         }
         else

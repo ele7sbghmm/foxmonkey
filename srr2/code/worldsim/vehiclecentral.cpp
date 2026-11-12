@@ -942,7 +942,7 @@ Vehicle* VehicleCentral::InitVehicle( const char* name, bool addToActiveVehicleL
     MEMTRACK_POP_GROUP( "VehicleCentral" );
 
     HeapMgr()->PopHeap( GetGameplayManager()->GetCurrentMissionHeap() );   
-
+    
     return vehicle;
 }
 

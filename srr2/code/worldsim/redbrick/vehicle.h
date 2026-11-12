@@ -70,40 +70,7 @@ enum VehicleType {VT_USER, VT_AI, VT_TRAFFIC, VT_LAST};
 class Vehicle : public DynaPhysDSG, public ISuperCamTarget, public IHudMapIconLocator
 {
 public:
-    enum { MAX_TRACKED_INSTANCES = 512 };
-    struct InstanceRecord
-    {
-        size_t instanceId;
-        Vehicle* ptr;
-        bool alive;
-        char name[64];
-        VehicleType vehicleType;
-        VehicleLocomotionType locoType;
-        int lastCentralIndex;
-        int actionButtonId;
-        int lastGetInCarVehicleId;
-        unsigned int lastRefCount;
-        float hitPoints;
-        float maxHitPoints;
-        bool triggerActive;
-        bool playerCar;
-        bool userDriving;
-        bool createdByParkedCarManager;
-        bool vehicleDestroyed;
-        unsigned int createdTick;
-        unsigned int deletedTick;
-    };
 
-    static size_t s_InstanceCount;
-    static size_t s_TotalInstanceCount;
-    static InstanceRecord s_InstanceRecords[MAX_TRACKED_INSTANCES];
-    static size_t s_InstanceRecordCount;
-
-    static void RefreshInstanceRecord(Vehicle* v);
-    static void ClearDeletedInstanceRecords();
-    unsigned int GetRefCount() const { return m_refCount; }
-
-    size_t m_InstanceId;
     //-----
     // core
     //-----

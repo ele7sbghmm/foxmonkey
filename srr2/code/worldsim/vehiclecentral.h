@@ -44,7 +44,6 @@ class tBillboardQuadGroup;
 
 class VehicleCentral : public LoadingManager::ProcessRequestsCallback
 {
-    friend class Gui;
     public:
         enum DriverInit
         {
