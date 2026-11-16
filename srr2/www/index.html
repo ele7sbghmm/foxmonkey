@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SRR2 WebGPU + WebSocket</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #141a29;
+      color: #e2e8f0;
+      font-family: Consolas, monospace;
+    }
+    #gpu-canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    #hud {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      line-height: 1.6;
+      pointer-events: none;
+    }
+    .status-ok {
+      color: #4ade80;
+    }
+    .status-err {
+      color: #f87171;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gpu-canvas"></canvas>
+  <div id="hud">
+    <div><strong>WebGPU:</strong> <span id="webgpu-status">Initializing...</span></div>
+    <div><strong>WebSocket:</strong> <span id="ws-status">Connecting...</span></div>
+    <div><strong>Loaded Fences:</strong> <span id="fence-count">0</span></div>
+    <div><strong>Last Msg:</strong> <span id="ws-last-msg">-</span></div>
+    <div style="color: #94a3b8; font-size: 11px; margin-top: 4px;">Drag: Pan | Scroll: Zoom | DblClick: Fit</div>
+  </div>
+  <script type="module" src="/dist/main.js"></script>
+</body>
+</html>

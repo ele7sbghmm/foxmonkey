@@ -69,6 +69,7 @@
 #include <p3d/effects/opticloader.hpp>
 #include <p3d/anim/vertexanimkey.hpp>
 #include <stateprop/statepropdata.hpp>
+#include <pddi/dx8/display.hpp>
 
 // Foundation Tech
 #include <raddebug.hpp>
@@ -123,6 +124,12 @@
 #include <radload/radload.hpp>
 
 #include <main/errorswin32.h>
+
+#include "blg.h"
+#include <imgui_impl_dx8.h>
+#include <imgui_impl_win32.h>
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+//extern LRESULT CALLBACK ImGui_Impl_Win32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
 #define WIN32_SECTION "WIN32_SECTION"
 #define TIMER_LEAVE 1
@@ -1624,11 +1631,24 @@ void Win32Platform::InitializeContext()
         //
         mpPlatform->SetActiveContext( mpContext );
         p3d::pddi->EnableZBuffer( true );
+
+        ImGui::CreateContext();
+        auto* device = reinterpret_cast<d3dDisplay*>(mpContext->GetDisplay())->GetD3DDevice();
+        g_Blg.Init(device);
+        ImGui_ImplDX8_Init(device);
+        ImGui_ImplWin32_Init(mhWnd);
+
+        SetProcessAffinityMask(GetCurrentProcess(), 1);
+
+        ImGuiIO& io = ImGui::GetIO();
+        io.MouseDrawCursor = true;
     }
     else
     {
+        ImGui_ImplDX8_InvalidateDeviceObjects();
         // Update the display settings.
         mpContext->GetDisplay()->InitDisplay( &init );
+        ImGui_ImplDX8_CreateDeviceObjects();
     }
 }
 
@@ -2280,6 +2300,9 @@ LRESULT Win32Platform::WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lP
     default:
         break;
     }
+
+    if (ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam))
+        return true;
 
     return DefWindowProc(hwnd, message, wParam, lParam);
 }
