@@ -1,4 +1,3 @@
-#include <winsock2.h>
 #include <ws2tcpip.h>
 #include <mswsock.h>
 #include <bcrypt.h>
@@ -19,22 +18,23 @@
 
 #include "server.h"
 
-using u8 = uint8_t;
-using u32 = uint32_t;
-using u64 = uint64_t;
+static SOCKET s_lastClient = ~0;
 
-static bool SendAll(SOCKET s, const void* buf, int len) {
+static bool SendAll(SOCKET client, const void* buf, int len) {
+	if (s_lastClient == INVALID_SOCKET) return false;
+	client = s_lastClient;
+
 	const char* ptr = (const char*)buf;
 	int rem = len;
 	while (rem > 0) {
-		int sent = send(s, ptr, rem, 0);
+		int sent = send(client, ptr, rem, 0);
 		if (sent <= 0) return false;
 		ptr += sent;
 		rem -= sent;
 	}
 	return true;
 }
-static void BuildFrame(SOCKET client, u8 opcode, const void* data, size_t len) {
+void SendFrame(SOCKET client, u8 opcode, size_t len) {
 	size_t hlen = 0;
 	u8 header[10]{};
 	header[0] = 0x80 | (opcode & 0xf);
@@ -52,13 +52,12 @@ static void BuildFrame(SOCKET client, u8 opcode, const void* data, size_t len) {
 	else {
 		u64 len64 = (u64)len;
 		header[1] = 127;
-		for (int i = 8; i-- > 0;)
-			header[2 + i] = len64 >> i * 8 & 0xff;
+		for (int i = 0; i < 8; ++i)
+			header[2 + i] = len64 >> (7 - i) * 8 & 0xff;
 		hlen = 10;
 	}
 
 	SendAll(client, (void*)header, hlen);
-	SendAll(client, data, len);
 }
 static bool RecvAll(SOCKET s, void* buf, int len) {
 	char* ptr = (char*)buf;
@@ -136,28 +135,30 @@ static Frame ReadFrame(const u8* buf, int len) {
 	if (len < 2) return {0};
 	Frame frame{}; 
 
-	u8 b0 = buf[frame.hsize++];
-	bool fin = (b0 & 0x80) != 0;
+	u8 b0 = buf[0]; frame.hsize++;
+	frame.fin = (b0 & 0x80) != 0;
 	u8 op = b0 & 0xf;
 
-	u8 b1 = buf[frame.hsize++];
-	bool masked = (b1 & 0x80) != 0;
+	u8 b1 = buf[1]; frame.hsize++;
+	frame.masked = (b1 & 0x80) != 0;
 	frame.plen = b1 & 0x7f;
 
 	if (frame.plen == 126) {
 		if (len < frame.hsize + 2) return {0};
-		frame.plen = ((u64)buf[frame.hsize] << 8) | buf[frame.hsize + 1];
+		frame.plen = ((u64)buf[2] << 8) | buf[3];
 		frame.hsize += 2;
 	} else if (frame.plen == 127) {
-		if (len < frame.hsize + 8) return {0};
+		if (len < 10) return {0};
 		frame.plen = 0;
-		for (int i = 0; i < 8; ++i)
-			frame.plen |= frame.plen << 8 | buf[frame.hsize++];
+		for (int i = 0; i < 8; ++i) {
+			frame.plen |= frame.plen << 8 | buf[2 + i];
+			frame.hsize++;
+		}
 	}
 
 	if (frame.plen > 0xff'ffff) return {0};
 
-	if (masked) {
+	if (frame.masked) {
 		if (len < frame.hsize + 4) return {0};
 			for (int i = 0; i < 4; ++i)
 				frame.mkey[i] = buf[frame.hsize++];
@@ -197,8 +198,11 @@ static DWORD WINAPI ClientWorker(LPVOID param) {
 		req[rec] = '\0';
 
 		const std::string s{req, (size_t)rec};
-		if (s.find("Sec-WebSocket-Key") != std::string::npos)
+		if (s.find("Sec-WebSocket-Key") != std::string::npos) {
 			Upgrade(client, s);
+			s_lastClient = client;
+			return 0;
+		}
 		else if (s.find("GET /index.js") != std::string::npos)
 			SendFile(client, "index.js", "application/javascript");
 		else if (s.find("GET / HTTP/1.1") != std::string::npos)
@@ -235,4 +239,11 @@ DWORD WINAPI RunListener(LPVOID param) {
 	}
 	WSACleanup();
 	return 0;
+}
+void SendVertices(const std::vector<Draw::Vertex3D>& vertices) {
+	const size_t count = vertices.size();
+	const size_t len = count * sizeof(Draw::Vertex3D);
+	SendFrame(NULL, 2, len + sizeof(size_t));
+	SendAll(NULL, (void*)&count, sizeof(size_t));
+	SendAll(NULL, (void*)vertices.data(), len);
 }

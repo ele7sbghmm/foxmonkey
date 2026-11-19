@@ -1,5 +1,6 @@
-code/**
-libs/**
-build/**
-cd/**
+code/
+libs/
+build/
+cd/
 
+node_modules/

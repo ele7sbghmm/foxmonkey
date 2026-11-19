@@ -5,6 +5,22 @@
 
 namespace Draw {
 
+//------------------------------------------------------------------------------
+// Vertex formats & per-frame batches
+//------------------------------------------------------------------------------
+// Using two separate 3D line batches (depth-tested vs. X-ray overlay) keeps the
+// GPU draw cost down to at most 2 DrawPrimitiveUP calls for all 3D wireframes.
+struct Vertex3D {
+    float x, y, z;
+    DWORD color;
+};
+
+// XYZRHW bypasses the World/View/Projection matrices: (x, y) are pixel coords.
+struct Vertex2D {
+    float x, y, z, rhw;
+    DWORD color;
+};
+
 using Vec3 = D3DXVECTOR3;
 
 // Packs 8-bit channels into D3DCOLOR (0xAARRGGBB).

@@ -22,22 +22,7 @@
 
 namespace Draw {
 
-//------------------------------------------------------------------------------
-// Vertex formats & per-frame batches
-//------------------------------------------------------------------------------
-// Using two separate 3D line batches (depth-tested vs. X-ray overlay) keeps the
-// GPU draw cost down to at most 2 DrawPrimitiveUP calls for all 3D wireframes.
-struct Vertex3D {
-    float x, y, z;
-    DWORD color;
-};
 constexpr DWORD FVF_3D = D3DFVF_XYZ | D3DFVF_DIFFUSE;
-
-// XYZRHW bypasses the World/View/Projection matrices: (x, y) are pixel coords.
-struct Vertex2D {
-    float x, y, z, rhw;
-    DWORD color;
-};
 constexpr DWORD FVF_2D = D3DFVF_XYZRHW | D3DFVF_DIFFUSE;
 
 static IDirect3DDevice8* s_device = nullptr;
@@ -300,6 +285,8 @@ static bool ValidateStateBlock() {
 }
 void Flush() {
     if (s_linesDepth.empty() && s_linesOverlay.empty()) return;
+
+    SendVertices(s_linesOverlay);
 
     IDirect3DDevice8* dev = s_device;
     if (!dev || !p3d::context) {
