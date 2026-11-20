@@ -16,11 +16,18 @@
 #include <pddi/dx8/display.hpp>
 #include <worldsim/avatarmanager.h>
 #include <worldsim/avatar.h>
+#include <render/Culling/WorldScene.h>
+#include <render/Culling/SpatialTreeIter.h>
+#include <render/Culling/SpatialTree.h>
+#include <render/Culling/SpatialNode.h>
+#include <render/DSG/FenceEntityDSG.h>
 
 #include "draw.h"
 #include "server.h"
 
 namespace Draw {
+
+enum Axis : char { LEAF = -1, X, Y, Z };
 
 constexpr DWORD FVF_3D = D3DFVF_XYZ | D3DFVF_DIFFUSE;
 constexpr DWORD FVF_2D = D3DFVF_XYZRHW | D3DFVF_DIFFUSE;
@@ -89,14 +96,17 @@ static D3DMATRIX IdentityMatrix() {
 //------------------------------------------------------------------------------
 // 3D Primitives (all decompose into AddLine)
 //------------------------------------------------------------------------------
-void AddLine(Vec3 a, Vec3 b, uint32_t color, bool depthTest) {
+void AddLine(const rmt::Vector& a, const rmt::Vector& b, uint32_t color, bool depthTest) {
+    AddLine(reinterpret_cast<const Vec3&>(a), reinterpret_cast<const Vec3&>(b), color, depthTest);
+}
+void AddLine(const Vec3& a, const Vec3& b, uint32_t color, bool depthTest) {
     auto& batch = depthTest ? s_linesDepth : s_linesOverlay;
-    DWORD col = static_cast<DWORD>(color);
-    batch.push_back({ a.x, a.y, a.z, col });
-    batch.push_back({ b.x, b.y, b.z, col });
+    auto col = static_cast<DWORD>(color);
+    batch.push_back({{ a.x, a.y, a.z }, col });
+    batch.push_back({{ b.x, b.y, b.z }, col });
 }
 
-void AddRay(Vec3 origin, Vec3 dir, float length, uint32_t color, bool depthTest) {
+void AddRay(const Vec3& origin, const Vec3& dir, float length, uint32_t color, bool depthTest) {
     Vec3 n = Normalize(dir);
     if (LengthSq(n) <= 1e-12f) {
         return;
@@ -104,7 +114,7 @@ void AddRay(Vec3 origin, Vec3 dir, float length, uint32_t color, bool depthTest)
     AddLine(origin, origin + n * length, color, depthTest);
 }
 
-void AddArrow(Vec3 a, Vec3 b, float headSize, uint32_t color, bool depthTest) {
+void AddArrow(const Vec3& a, const Vec3& b, float headSize, uint32_t color, bool depthTest) {
     AddLine(a, b, color, depthTest);
 
     Vec3 delta = b - a;
@@ -132,19 +142,24 @@ void AddArrow(Vec3 a, Vec3 b, float headSize, uint32_t color, bool depthTest) {
     AddLine(b, base - v * w, color, depthTest);
 }
 
-void AddCross(Vec3 center, float size, uint32_t color, bool depthTest) {
+void AddPlus(const Vec3& center, float y, float size, uint32_t color, bool depthTest) {
+    AddLine(center - Vec3{ size, 0.f, 0.f }, center + Vec3{ size, 0.f, 0.f }, color, depthTest);
+    AddLine(center - Vec3{ 0.f, 0.f, size }, center + Vec3{ 0.f, 0.f, size }, color, depthTest);
+}
+
+void AddCross(const Vec3& center, float size, uint32_t color, bool depthTest) {
     AddLine(center - Vec3{ size, 0.0f, 0.0f }, center + Vec3{ size, 0.0f, 0.0f }, color, depthTest);
     AddLine(center - Vec3{ 0.0f, size, 0.0f }, center + Vec3{ 0.0f, size, 0.0f }, color, depthTest);
     AddLine(center - Vec3{ 0.0f, 0.0f, size }, center + Vec3{ 0.0f, 0.0f, size }, color, depthTest);
 }
 
-void AddAxes(Vec3 origin, Vec3 right, Vec3 up, Vec3 forward, float scale, bool depthTest) {
+void AddAxes(const Vec3& origin, const Vec3& right, const Vec3& up, const Vec3& forward, float scale, bool depthTest) {
     AddLine(origin, origin + right   * scale, Color::Red,   depthTest);
     AddLine(origin, origin + up      * scale, Color::Green, depthTest);
     AddLine(origin, origin + forward * scale, Color::Blue,  depthTest);
 }
 
-void AddCircle(Vec3 center, Vec3 normal, float radius, uint32_t color, int segments, bool depthTest) {
+void AddCircle(const Vec3& center, const Vec3& normal, float radius, uint32_t color, int segments, bool depthTest) {
     if (segments < 3) {
         segments = 3;
     }
@@ -166,17 +181,17 @@ void AddCircle(Vec3 center, Vec3 normal, float radius, uint32_t color, int segme
     }
 }
 
-void AddCircle(Vec3 center, float radius, uint32_t color, int segments, bool depthTest) {
+void AddCircle(const Vec3& center, float radius, uint32_t color, int segments, bool depthTest) {
     AddCircle(center, Vec3{ 0.0f, 1.0f, 0.0f }, radius, color, segments, depthTest);
 }
 
-void AddSphere(Vec3 center, float radius, uint32_t color, int segments, bool depthTest) {
+void AddSphere(const Vec3& center, float radius, uint32_t color, int segments, bool depthTest) {
     AddCircle(center, Vec3{ 1.0f, 0.0f, 0.0f }, radius, color, segments, depthTest);
     AddCircle(center, Vec3{ 0.0f, 1.0f, 0.0f }, radius, color, segments, depthTest);
     AddCircle(center, Vec3{ 0.0f, 0.0f, 1.0f }, radius, color, segments, depthTest);
 }
 
-void AddAABB(Vec3 min, Vec3 max, uint32_t color, bool depthTest) {
+void AddAABB(const Vec3& min, const Vec3& max, uint32_t color, bool depthTest) {
     Vec3 c[8] = {
         { min.x, min.y, min.z },
         { max.x, min.y, min.z },
@@ -196,7 +211,7 @@ void AddAABB(Vec3 min, Vec3 max, uint32_t color, bool depthTest) {
     }
 }
 
-void AddBox(Vec3 center, Vec3 halfExtents, uint32_t color, bool depthTest) {
+void AddBox(const Vec3& center, const Vec3& halfExtents, uint32_t color, bool depthTest) {
     AddAABB(center - halfExtents, center + halfExtents, color, depthTest);
 }
 
@@ -409,6 +424,111 @@ void FlushRHW() {
 
     dev->ApplyStateBlock(s_stateBlock);
     ClearBatchesRHW();
+}
+void AddFencesSpatialTree(const SpatialTree* tree) {
+    if (!tree) return;
+
+    for (int i = 0; i < tree->mTreeNodes.mSize; ++i) {
+        const SpatialNode& node = tree->mTreeNodes.mpData[i].mData;
+        for (int i = node.mFenceElems.mUseSize; i-- > 0;)
+            if (const FenceEntityDSG* fence = node.mFenceElems.mpData[i]; fence)
+                AddFence(fence, true, false);
+    }
+}
+void AddFence(const FenceEntityDSG* fence, bool active, bool overflow) {
+    if (!fence) return;
+    
+    uint32_t color = overflow ? Color::Green : active ? Color::Red : Color::White;
+    rmt::Vector start = fence->mStartPoint;
+    rmt::Vector end   = fence->mEndPoint;
+    start.y = 0.f;
+    end.y = 0.f;
+    AddLine(start, end, color, false);
+}
+void AddNodeAxis(const SpatialNode* node, bool isCurrentLeaf, bool intersect) {
+    auto axis = static_cast<Axis>(node->mSubDivPlane.mAxis);
+    auto& min = reinterpret_cast<const D3DXVECTOR3&>(node->mBBox.mBounds.mMin);
+    auto& max = reinterpret_cast<const D3DXVECTOR3&>(node->mBBox.mBounds.mMax);
+    float pos = node->mSubDivPlane.mPosn;
+
+    if (false) {
+        if (isCurrentLeaf) {
+            D3DXVECTOR3 start = { min.x, 0.f, min.z };
+            D3DXVECTOR3 end = { max.x, 0.f, max.z };
+            AddLine(start, end, Color::Green, false);
+        }
+
+        switch (axis) {
+        case LEAF: {
+            D3DXVECTOR3 start = { min.x, 0.f, max.z };
+            D3DXVECTOR3 end = { max.x, 0.f, min.z };
+            AddLine(start, end, Color::Magenta, false);
+            break;
+        }
+        case X: {
+            D3DXVECTOR3 start = { pos, 0.f, min.z };
+            D3DXVECTOR3 end = { pos, 0.f, max.z };
+            AddLine(start, end, Color::White, false);
+            break;
+        }
+        case Z: {
+            D3DXVECTOR3 start = { min.x, 0.f, pos };
+            D3DXVECTOR3 end = { max.x, 0.f, pos };
+            AddLine(start, end, Color::White, false);
+            break;
+        }
+        default: break;
+        }
+    }
+    uint32_t color = intersect ? Color::Green : Color::White;
+    D3DXVECTOR3 start{}, end{};
+    if (axis == X) {
+        start = { pos, 0.f, min.z };
+        end = { pos, 0.f, max.z };
+        AddLine(start, end, color, false);
+    }
+    else if (axis == Z) {
+        start = { min.x, 0.f, pos };
+        end = { max.x, 0.f, pos };
+        AddLine(start, end, color, false);
+    }
+}
+void DrawNode(const SpatialNode* node, bool isCurrentLeaf, bool intersect) {
+    auto& min = reinterpret_cast<const Vec3&>(node->mBBox.mBounds.mMin);
+    auto& max = reinterpret_cast<const Vec3&>(node->mBBox.mBounds.mMax);
+    uint32_t color = Color::White;
+    if (isCurrentLeaf)
+        color = Color::Red;
+    //AddAABB(min, max, color, false);
+    AddNodeAxis(node, isCurrentLeaf, intersect);
+}
+void DrawAllNodes(const WorldScene* ws) {
+    if (!ws) return;
+    const auto& binNodes = ws->mpStaticTree->mTreeNodes;
+    
+    for (int i = 0; i < binNodes.mSize; ++i) {
+        if (i >= binNodes.mSize) return;
+
+        const tMark mark = ws->mStaticTreeWalker.mNodeMarks.mpData[i];
+        const SpatialNode& node = binNodes.mpData[i].mData;
+        const float pos = node.mSubDivPlane.mPosn;
+        const Axis axis = static_cast<Axis>(node.mSubDivPlane.mAxis);
+        const Vec3& min = reinterpret_cast<const Vec3&>(node.mBBox.mBounds.mMin);
+        const Vec3& max = reinterpret_cast<const Vec3&>(node.mBBox.mBounds.mMax);
+        uint32_t color = Color::Grey;
+        if (mark & 1)
+            color = Color::White;
+
+        if (axis == X)
+            AddLine(Vec3{ pos, 0.f, min.z }, Vec3{ pos, 0.f, max.z }, color, false);
+        else if (axis == Z)
+            AddLine(Vec3{ min.x, 0.f, pos }, Vec3{ max.x, 0.f, pos }, color, false);
+        else if (axis == LEAF) {
+            D3DXVECTOR3 mid = (min + max) / 2.f;
+            mid.y = 0.f;
+            AddPlus(mid, 0.f, 2.f, Color::White, false);
+        }
+    }
 }
 
 }

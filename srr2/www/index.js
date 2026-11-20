@@ -1,14 +1,5 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.min.js'
-import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.187.0/addons/controls/OrbitControls.js'
-// import { OrbitControls } from                                   'three/addons/controls/OrbitControls.js';
-
-
-const cameraData = new Float32Array(32)
-const camera = new THREE.PerspectiveCamera(75., 4/3, .1, 100_000.)
-camera.position.set(0., 10_000., 0.)
-camera.lookAt(0., 0., 0.)
-const control = new OrbitControls()
-control.target.set(0., 0., 0.)
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.187.0/+esm'
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.187.0/addons/controls/OrbitControls.js/+esm'
 
 const adapter = await navigator.gpu.requestAdapter()
 const device = await adapter.requestDevice()
@@ -20,11 +11,16 @@ context.configure({ device, format })
 canvas.width = window.innerWidth
 canvas.height = window.innerHeight
 
+const cameraData = new Float32Array(32)
+const camera = new THREE.PerspectiveCamera(75., canvas.width / canvas.height, .1, 100_000.)
+camera.position.set(0., 1_000., 0.)
+camera.lookAt(0., 0., 0.)
+const control = new OrbitControls(camera, canvas)
+control.target.set(0., 0., 0.)
+
 let vertexCount = 2
-const lines = [
-     1., 0.,  0., 0x00ff00ff,
-    -1., 0.,  0., 0x00ff00ff,
-]
+const lines = [ 1., 0.,  0., 0x00ff00ff,
+               -1., 0.,  0., 0x00ff00ff, ]
 const vertexData = new ArrayBuffer(lines.length * 4)
 const vertexView = new DataView(vertexData)
 for (let i = 0; i < lines.length; ++i) {
@@ -53,7 +49,7 @@ const module = device.createShaderModule({ code: `
 
     @vertex fn vs_main(@location(0) pos: vec3f, @location(1) color: u32) -> VertOut {
         var out: VertOut;
-        out.pos = vec4f(pos, 1.);
+        out.pos = uniforms.Projection * uniforms.View * vec4f(pos.x, pos.y, -pos.z, 1.);
         out.color = unpack4x8unorm(color).bgra;
         return out;
     }

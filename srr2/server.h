@@ -2,6 +2,7 @@
 
 #include <winsock2.h>
 #include <cstdint>
+#include <vector>
 
 #include "draw.h"
 

@@ -40,7 +40,7 @@ void SendFrame(SOCKET client, u8 opcode, size_t len) {
 	header[0] = 0x80 | (opcode & 0xf);
 
 	if (len <= 125) {
-		header[1] = len;
+		header[1] = (u8)(len & 0xff);
 		hlen = 2;
 	}
 	else if (len <= 0xffff) {
@@ -97,7 +97,7 @@ static std::string Base64(const u8* data, int len) {
 	}
 	return out;
 }
-static void Upgrade(SOCKET client, const std::string& req) {
+static void Upgrade(SOCKET client, std::string_view req) {
 	std::string guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 	std::string needle = "Sec-WebSocket-Key: ";
 
@@ -106,7 +106,7 @@ static void Upgrade(SOCKET client, const std::string& req) {
 	start += needle.size();
 	size_t end = req.find("\r\n", start);
 
-	std::string key = req.substr(start, end - start);
+	std::string key(req.substr(start, end - start));
 	u8 digest[20]{};
 	Sha1(key + guid, digest);
 	std::string accept_key = Base64(digest, sizeof(digest));
@@ -131,7 +131,7 @@ struct Frame {
 	u64 plen = 0;
 	u8 op = 0;
 };
-static Frame ReadFrame(const u8* buf, int len) {
+static Frame ReadFrame(const u8* buf, size_t len) {
 	if (len < 2) return {0};
 	Frame frame{}; 
 
