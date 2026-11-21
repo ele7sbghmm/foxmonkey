@@ -35,16 +35,20 @@ constexpr uint32_t RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) {
 }
 
 namespace Color {
-    constexpr uint32_t Red     = RGBA(255,   0,   0);
-    constexpr uint32_t Green   = RGBA(  0, 255,   0);
-    constexpr uint32_t Blue    = RGBA(  0,   0, 255);
-    constexpr uint32_t Yellow  = RGBA(255, 255,   0);
-    constexpr uint32_t Cyan    = RGBA(  0, 255, 255);
-    constexpr uint32_t Magenta = RGBA(255,   0, 255);
-    constexpr uint32_t White   = RGBA(255, 255, 255);
-    constexpr uint32_t Grey    = RGBA(128, 128, 128);
-    constexpr uint32_t Black   = RGBA(  0,   0,   0);
-    constexpr uint32_t Orange  = RGBA(255, 128,   0);
+    constexpr uint32_t Red       = RGBA(255,   0,   0);
+    constexpr uint32_t Green     = RGBA(  0, 255,   0);
+    constexpr uint32_t Blue      = RGBA(  0,   0, 255);
+    constexpr uint32_t Yellow    = RGBA(255, 255,   0);
+    constexpr uint32_t Cyan      = RGBA(  0, 255, 255);
+    constexpr uint32_t Magenta   = RGBA(255,   0, 255);
+    constexpr uint32_t White     = RGBA(255, 255, 255);
+    constexpr uint32_t LightGrey = RGBA(170, 170, 170);
+    constexpr uint32_t Grey      = RGBA(128, 128, 128);
+    constexpr uint32_t DarkGrey  = RGBA( 55,  55,  55);
+    constexpr uint32_t Black     = RGBA(  0,   0,   0);
+    constexpr uint32_t Orange    = RGBA(255, 128,   0);
+    constexpr uint32_t Purple    = RGBA(180,  60, 255);
+    constexpr uint32_t Lime      = RGBA(140, 255,  60);
 }
 
 void Init(IDirect3DDevice8* device);
@@ -53,7 +57,7 @@ void Init(IDirect3DDevice8* device);
 void AddLine(const Vec3& a, const Vec3& b, uint32_t color = Color::White, bool depthTest = true);
 void AddRay(const Vec3& origin, const Vec3& dir, float length, uint32_t color = Color::Yellow, bool depthTest = true);
 void AddArrow(const Vec3& a, const Vec3& b, float headSize = 0.25f, uint32_t color = Color::Yellow, bool depthTest = true);
-void AddPlus(const Vec3& center, float y, float size, uint32_t color, bool depthTest);
+void AddPlus(const Vec3& center, float y, float size, uint32_t color, bool depthTest = false);
 void AddCross(const Vec3& center, float size = 0.25f, uint32_t color = Color::White, bool depthTest = true);
 void AddAxes(const Vec3& origin, const Vec3& right, const Vec3& up, const Vec3& forward, float scale = 1.0f, bool depthTest = true);
 void AddCircle(const Vec3& center, const Vec3& normal, float radius, uint32_t color = Color::Green, int segments = 24, bool depthTest = true);
@@ -61,6 +65,7 @@ void AddCircle(const Vec3& center, float radius, uint32_t color = Color::Green, 
 void AddSphere(const Vec3& center, float radius, uint32_t color = Color::Cyan, int segments = 24, bool depthTest = true);
 void AddAABB(const Vec3& min, const Vec3& max, uint32_t color = Color::Red, bool depthTest = true);
 void AddBox(const Vec3& center, const Vec3& halfExtents, uint32_t color = Color::Red, bool depthTest = true);
+void AddRectXZ(float minX, float minZ, float maxX, float maxZ, float y, uint32_t color, bool depthTest = false);
 
 // 2D screen-space primitives (pixel coordinates, origin at top-left).
 void AddLine2D(float x0, float y0, float x1, float y1, uint32_t color = Color::White);
@@ -75,6 +80,6 @@ void AddFencesSpatialTree(const SpatialTree* tree);
 void AddFence(const FenceEntityDSG* fence, bool active, bool overflow);
 void AddNodeAxis(const SpatialNode* node, bool isCurrentLeaf, bool intersect);
 void DrawNode(const SpatialNode* node, bool isCurrentLeaf, bool intersect);
-void DrawAllNodes(const WorldScene* tree);
+void DrawAllNodes(const WorldScene* ws);
 
 }

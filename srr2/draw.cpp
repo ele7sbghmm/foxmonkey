@@ -45,7 +45,6 @@ static constexpr float kPi = 3.14159265358979323846f;
 
 void Init(IDirect3DDevice8* device) {
     s_device = device;
-    s_stateBlockDevice = device;
 }
 
 //------------------------------------------------------------------------------
@@ -89,21 +88,20 @@ static D3DMATRIX IdentityMatrix() {
     return m;
 }
 
-//------------------------------------------------------------------------------
-// Platform / thread setup
-//------------------------------------------------------------------------------
+static int ClampSegments(int segments) {
+    if (segments < 3) return 3;
+    if (segments > 4096) return 4096;
+    return segments;
+}
 
 //------------------------------------------------------------------------------
 // 3D Primitives (all decompose into AddLine)
 //------------------------------------------------------------------------------
-void AddLine(const rmt::Vector& a, const rmt::Vector& b, uint32_t color, bool depthTest) {
-    AddLine(reinterpret_cast<const Vec3&>(a), reinterpret_cast<const Vec3&>(b), color, depthTest);
-}
 void AddLine(const Vec3& a, const Vec3& b, uint32_t color, bool depthTest) {
     auto& batch = depthTest ? s_linesDepth : s_linesOverlay;
     auto col = static_cast<DWORD>(color);
-    batch.push_back({{ a.x, a.y, a.z }, col });
-    batch.push_back({{ b.x, b.y, b.z }, col });
+    batch.push_back({ { a.x, a.y, a.z }, col });
+    batch.push_back({ { b.x, b.y, b.z }, col });
 }
 
 void AddRay(const Vec3& origin, const Vec3& dir, float length, uint32_t color, bool depthTest) {
@@ -143,8 +141,8 @@ void AddArrow(const Vec3& a, const Vec3& b, float headSize, uint32_t color, bool
 }
 
 void AddPlus(const Vec3& center, float y, float size, uint32_t color, bool depthTest) {
-    AddLine(center - Vec3{ size, 0.f, 0.f }, center + Vec3{ size, 0.f, 0.f }, color, depthTest);
-    AddLine(center - Vec3{ 0.f, 0.f, size }, center + Vec3{ 0.f, 0.f, size }, color, depthTest);
+    AddLine(Vec3{ center.x - size, y, center.z }, Vec3{ center.x + size, y, center.z }, color, depthTest);
+    AddLine(Vec3{ center.x, y, center.z - size }, Vec3{ center.x, y, center.z + size }, color, depthTest);
 }
 
 void AddCross(const Vec3& center, float size, uint32_t color, bool depthTest) {
@@ -160,9 +158,11 @@ void AddAxes(const Vec3& origin, const Vec3& right, const Vec3& up, const Vec3& 
 }
 
 void AddCircle(const Vec3& center, const Vec3& normal, float radius, uint32_t color, int segments, bool depthTest) {
-    if (segments < 3) {
-        segments = 3;
+    if (radius <= 0.0f) {
+        return;
     }
+    segments = ClampSegments(segments);
+
     Vec3 n = Normalize(normal);
     if (LengthSq(n) <= 1e-12f) {
         n = { 0.0f, 1.0f, 0.0f };
@@ -215,6 +215,17 @@ void AddBox(const Vec3& center, const Vec3& halfExtents, uint32_t color, bool de
     AddAABB(center - halfExtents, center + halfExtents, color, depthTest);
 }
 
+void AddRectXZ(float minX, float minZ, float maxX, float maxZ, float y, uint32_t color, bool depthTest) {
+    Vec3 p0{ minX, y, minZ };
+    Vec3 p1{ maxX, y, minZ };
+    Vec3 p2{ maxX, y, maxZ };
+    Vec3 p3{ minX, y, maxZ };
+    AddLine(p0, p1, color, depthTest);
+    AddLine(p1, p2, color, depthTest);
+    AddLine(p2, p3, color, depthTest);
+    AddLine(p3, p0, color, depthTest);
+}
+
 //------------------------------------------------------------------------------
 // 2D Screen-space Primitives
 //------------------------------------------------------------------------------
@@ -244,9 +255,11 @@ void AddRect2D(float x, float y, float w, float h, uint32_t color, bool filled) 
 }
 
 void AddCircle2D(float cx, float cy, float radius, uint32_t color, int segments) {
-    if (segments < 3) {
-        segments = 3;
+    if (radius <= 0.0f) {
+        return;
     }
+    segments = ClampSegments(segments);
+
     const float step = (2.0f * kPi) / static_cast<float>(segments);
     float px = cx + radius;
     float py = cy;
@@ -267,12 +280,23 @@ static void ClearBatches() {
     s_linesDepth.clear();
     s_linesOverlay.clear();
 }
+
 static void ClearBatchesRHW() {
     s_lines2D.clear();
     s_tris2D.clear();
 }
-static bool ValidateStateBlock() {
-    auto* dev = s_device;
+
+static IDirect3DDevice8* ResolveDevice() {
+    if (s_device) return s_device;
+    if (p3d::display) {
+        return static_cast<d3dDisplay*>(p3d::display)->GetD3DDevice();
+    }
+    return nullptr;
+}
+
+static bool ValidateStateBlock(IDirect3DDevice8* dev) {
+    if (!dev) return false;
+
     if (s_stateBlockDevice != dev) {
         if (s_stateBlock && s_stateBlockDevice) {
             s_stateBlockDevice->DeleteStateBlock(s_stateBlock);
@@ -282,251 +306,310 @@ static bool ValidateStateBlock() {
     }
     if (!s_stateBlock) {
         if (FAILED(dev->CreateStateBlock(D3DSBT_ALL, &s_stateBlock))) {
-            ClearBatches();
-            ClearBatchesRHW();
             return false;
         }
-    }
-    else if (FAILED(dev->CaptureStateBlock(s_stateBlock))) {
+    } else if (FAILED(dev->CaptureStateBlock(s_stateBlock))) {
         dev->DeleteStateBlock(s_stateBlock);
         s_stateBlock = 0;
         if (FAILED(dev->CreateStateBlock(D3DSBT_ALL, &s_stateBlock))) {
-            ClearBatches();
-            ClearBatchesRHW();
             return false;
         }
     }
     return true;
 }
+
+static void SetupDebugRenderState(IDirect3DDevice8* dev) {
+    // Configure clean fixed-function vertex-color rendering without modifying
+    // Pure3D's shadowed d3dState (ApplyStateBlock restores everything).
+    dev->SetPixelShader(0);
+    dev->SetTexture(0, nullptr);
+    dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    dev->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    dev->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+
+    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
+    dev->SetRenderState(D3DRS_COLORVERTEX, TRUE);
+    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    dev->SetRenderState(D3DRS_FOGENABLE, FALSE);
+    dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+    dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+    dev->SetRenderState(D3DRS_VERTEXBLEND, D3DVBF_DISABLE);
+    dev->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
+    dev->SetRenderState(D3DRS_COLORWRITEENABLE,
+        D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
+    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+    dev->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+}
+
 void Flush() {
     if (s_linesDepth.empty() && s_linesOverlay.empty()) return;
 
     SendVertices(s_linesOverlay);
 
-    IDirect3DDevice8* dev = s_device;
-    if (!dev || !p3d::context) {
+    IDirect3DDevice8* dev = ResolveDevice();
+    if (!dev || !p3d::context || !ValidateStateBlock(dev)) {
         ClearBatches();
         return;
     }
 
-    // Create or recreate the state block if the device changed or was reset.
-    if (!ValidateStateBlock()) return;
+    SetupDebugRenderState(dev);
 
-    // Configure clean fixed-function vertex-color rendering without modifying
-    // Pure3D's shadowed d3dState (ApplyStateBlock below restores everything).
-    dev->SetPixelShader(0);
-    dev->SetTexture(0, nullptr);
-    dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-    dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-    dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
-    dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
-    dev->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
-    dev->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+    // Pure3D leaves D3DTS_VIEW as Identity and multiplies World*View into
+    // D3DTS_WORLD, while keeping the active perspective D3DTS_PROJECTION.
+    D3DMATRIX world = IdentityMatrix();
+    dev->SetTransform(D3DTS_WORLD, &world);
+    dev->SetTransform(D3DTS_VIEW, reinterpret_cast<const D3DMATRIX*>(p3d::context->GetViewMatrix()));
+    dev->SetVertexShader(FVF_3D);
 
-    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
-    dev->SetRenderState(D3DRS_COLORVERTEX, TRUE);
-    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-    dev->SetRenderState(D3DRS_FOGENABLE, FALSE);
-    dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
-    dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
-    dev->SetRenderState(D3DRS_VERTEXBLEND, D3DVBF_DISABLE);
-    dev->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
-    dev->SetRenderState(D3DRS_COLORWRITEENABLE,
-        D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
-    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-    dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-    dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
-    dev->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+    if (s_linesDepth.size() >= 2) {
+        dev->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
+        dev->DrawPrimitiveUP(D3DPT_LINELIST,
+            static_cast<UINT>(s_linesDepth.size() / 2),
+            s_linesDepth.data(), sizeof(Vertex3D));
+    }
 
-    // 3D batches: Pure3D leaves D3DTS_VIEW as Identity and multiplies World*View
-    // into D3DTS_WORLD, while keeping the active perspective D3DTS_PROJECTION.
-    if (!s_linesDepth.empty() || !s_linesOverlay.empty()) {
-        //D3DMATRIX world = IdentityMatrix();
-        //dev->SetTransform(D3DTS_WORLD, &world);
-        //dev->SetTransform(D3DTS_VIEW, reinterpret_cast<const D3DMATRIX*>(p3d::context->GetViewMatrix()));
-        dev->SetVertexShader(FVF_3D);
-
-        if (s_linesDepth.size() >= 2) {
-            dev->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
-            dev->DrawPrimitiveUP(D3DPT_LINELIST,
-                static_cast<UINT>(s_linesDepth.size() / 2),
-                s_linesDepth.data(), sizeof(Vertex3D));
-        }
-
-        if (s_linesOverlay.size() >= 2) {
-            dev->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
-            dev->DrawPrimitiveUP(D3DPT_LINELIST,
-                static_cast<UINT>(s_linesOverlay.size() / 2),
-                s_linesOverlay.data(), sizeof(Vertex3D));
-        }
+    if (s_linesOverlay.size() >= 2) {
+        dev->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+        dev->DrawPrimitiveUP(D3DPT_LINELIST,
+            static_cast<UINT>(s_linesOverlay.size() / 2),
+            s_linesOverlay.data(), sizeof(Vertex3D));
     }
 
     dev->ApplyStateBlock(s_stateBlock);
     ClearBatches();
 }
+
 void FlushRHW() {
     if (s_lines2D.empty() && s_tris2D.empty()) return;
 
-    IDirect3DDevice8* dev = s_device;
-    if (!dev || !p3d::context) {
+    IDirect3DDevice8* dev = ResolveDevice();
+    if (!dev || !p3d::context || !ValidateStateBlock(dev)) {
         ClearBatchesRHW();
         return;
     }
 
-    // Create or recreate the state block if the device changed or was reset.
-    if (!ValidateStateBlock()) return;
-
-    // Configure clean fixed-function vertex-color rendering without modifying
-    // Pure3D's shadowed d3dState (ApplyStateBlock below restores everything).
-    dev->SetPixelShader(0);
-    dev->SetTexture(0, nullptr);
-    dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-    dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-    dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
-    dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
-    dev->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
-    dev->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
-
-    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
-    dev->SetRenderState(D3DRS_COLORVERTEX, TRUE);
-    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-    dev->SetRenderState(D3DRS_FOGENABLE, FALSE);
-    dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
-    dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
-    dev->SetRenderState(D3DRS_VERTEXBLEND, D3DVBF_DISABLE);
-    dev->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
-    dev->SetRenderState(D3DRS_COLORWRITEENABLE,
-        D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
-    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-    dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-    dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
-    dev->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+    SetupDebugRenderState(dev);
 
     // 2D screen-space batches: XYZRHW ignores World/View/Projection matrices.
-    if (!s_tris2D.empty() || !s_lines2D.empty()) {
-        dev->SetVertexShader(FVF_2D);
-        dev->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+    dev->SetVertexShader(FVF_2D);
+    dev->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
 
-        if (s_tris2D.size() >= 3) {
-            dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST,
-                static_cast<UINT>(s_tris2D.size() / 3),
-                s_tris2D.data(), sizeof(Vertex2D));
-        }
+    if (s_tris2D.size() >= 3) {
+        dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST,
+            static_cast<UINT>(s_tris2D.size() / 3),
+            s_tris2D.data(), sizeof(Vertex2D));
+    }
 
-        if (s_lines2D.size() >= 2) {
-            dev->DrawPrimitiveUP(D3DPT_LINELIST,
-                static_cast<UINT>(s_lines2D.size() / 2),
-                s_lines2D.data(), sizeof(Vertex2D));
-        }
+    if (s_lines2D.size() >= 2) {
+        dev->DrawPrimitiveUP(D3DPT_LINELIST,
+            static_cast<UINT>(s_lines2D.size() / 2),
+            s_lines2D.data(), sizeof(Vertex2D));
     }
 
     dev->ApplyStateBlock(s_stateBlock);
     ClearBatchesRHW();
 }
+
+//------------------------------------------------------------------------------
+// Spatial / Vision Node Visualization (WorldScene debugging)
+//------------------------------------------------------------------------------
+static int CountNodeRenderables(const SpatialNode& node) {
+    return node.mSEntityElems.mUseSize
+         + node.mAnimCollElems.mUseSize
+         + node.mAnimElems.mUseSize
+         + node.mDPhysElems.mUseSize
+         + node.mSPhysElems.mUseSize;
+}
+
 void AddFencesSpatialTree(const SpatialTree* tree) {
-    if (!tree) return;
+    if (!tree || !tree->mTreeNodes.mpData) return;
 
     for (int i = 0; i < tree->mTreeNodes.mSize; ++i) {
         const SpatialNode& node = tree->mTreeNodes.mpData[i].mData;
-        for (int i = node.mFenceElems.mUseSize; i-- > 0;)
-            if (const FenceEntityDSG* fence = node.mFenceElems.mpData[i]; fence)
+        for (int j = node.mFenceElems.mUseSize; j-- > 0;) {
+            if (const FenceEntityDSG* fence = node.mFenceElems.mpData[j]) {
                 AddFence(fence, true, false);
+            }
+        }
     }
 }
+
 void AddFence(const FenceEntityDSG* fence, bool active, bool overflow) {
     if (!fence) return;
-    
+
     uint32_t color = overflow ? Color::Green : active ? Color::Red : Color::White;
-    rmt::Vector start = fence->mStartPoint;
-    rmt::Vector end   = fence->mEndPoint;
-    start.y = 0.f;
-    end.y = 0.f;
+    Vec3 start{ fence->mStartPoint.x, 0.f, fence->mStartPoint.z };
+    Vec3 end{ fence->mEndPoint.x, 0.f, fence->mEndPoint.z };
     AddLine(start, end, color, false);
 }
+
 void AddNodeAxis(const SpatialNode* node, bool isCurrentLeaf, bool intersect) {
+    if (!node) return;
+
     auto axis = static_cast<Axis>(node->mSubDivPlane.mAxis);
-    auto& min = reinterpret_cast<const D3DXVECTOR3&>(node->mBBox.mBounds.mMin);
-    auto& max = reinterpret_cast<const D3DXVECTOR3&>(node->mBBox.mBounds.mMax);
-    float pos = node->mSubDivPlane.mPosn;
+    const auto& min = reinterpret_cast<const Vec3&>(node->mBBox.mBounds.mMin);
+    const auto& max = reinterpret_cast<const Vec3&>(node->mBBox.mBounds.mMax);
+    const float pos = node->mSubDivPlane.mPosn;
 
-    if (false) {
-        if (isCurrentLeaf) {
-            D3DXVECTOR3 start = { min.x, 0.f, min.z };
-            D3DXVECTOR3 end = { max.x, 0.f, max.z };
-            AddLine(start, end, Color::Green, false);
-        }
-
-        switch (axis) {
-        case LEAF: {
-            D3DXVECTOR3 start = { min.x, 0.f, max.z };
-            D3DXVECTOR3 end = { max.x, 0.f, min.z };
-            AddLine(start, end, Color::Magenta, false);
-            break;
-        }
-        case X: {
-            D3DXVECTOR3 start = { pos, 0.f, min.z };
-            D3DXVECTOR3 end = { pos, 0.f, max.z };
-            AddLine(start, end, Color::White, false);
-            break;
-        }
-        case Z: {
-            D3DXVECTOR3 start = { min.x, 0.f, pos };
-            D3DXVECTOR3 end = { max.x, 0.f, pos };
-            AddLine(start, end, Color::White, false);
-            break;
-        }
-        default: break;
-        }
-    }
-    uint32_t color = intersect ? Color::Green : Color::White;
-    D3DXVECTOR3 start{}, end{};
+    uint32_t color = intersect ? Color::Green : (isCurrentLeaf ? Color::Red : Color::White);
     if (axis == X) {
-        start = { pos, 0.f, min.z };
-        end = { pos, 0.f, max.z };
-        AddLine(start, end, color, false);
-    }
-    else if (axis == Z) {
-        start = { min.x, 0.f, pos };
-        end = { max.x, 0.f, pos };
-        AddLine(start, end, color, false);
+        AddLine(Vec3{ pos, 0.f, min.z }, Vec3{ pos, 0.f, max.z }, color, false);
+    } else if (axis == Z) {
+        AddLine(Vec3{ min.x, 0.f, pos }, Vec3{ max.x, 0.f, pos }, color, false);
     }
 }
+
 void DrawNode(const SpatialNode* node, bool isCurrentLeaf, bool intersect) {
-    auto& min = reinterpret_cast<const Vec3&>(node->mBBox.mBounds.mMin);
-    auto& max = reinterpret_cast<const Vec3&>(node->mBBox.mBounds.mMax);
-    uint32_t color = Color::White;
-    if (isCurrentLeaf)
-        color = Color::Red;
-    //AddAABB(min, max, color, false);
+    if (!node) return;
     AddNodeAxis(node, isCurrentLeaf, intersect);
 }
-void DrawAllNodes(const WorldScene* ws) {
-    if (!ws) return;
-    const auto& binNodes = ws->mpStaticTree->mTreeNodes;
-    
-    for (int i = 0; i < binNodes.mSize; ++i) {
-        if (i >= binNodes.mSize) return;
 
+void DrawAllNodes(const WorldScene* ws) {
+    if (!ws || !ws->mpStaticTree || !ws->mpStaticTree->mTreeNodes.mpData ||
+        !ws->mStaticTreeWalker.mNodeMarks.mpData || !ws->mStaticTreeWalker.mpRootNode) {
+        return;
+    }
+
+    const auto& binNodes = ws->mpStaticTree->mTreeNodes;
+    const int nodeCount = (binNodes.mSize < ws->mStaticTreeWalker.mNodeMarks.mSize)
+        ? binNodes.mSize
+        : ws->mStaticTreeWalker.mNodeMarks.mSize;
+
+    // A. Camera culling volumes: View Sphere vs. Vision Cone.
+    const float drawDist = (ws->mDrawDist > 0.0f) ? ws->mDrawDist : 0.0f;
+    const Vec3 camPos{ ws->mViewPosn.x, ws->mViewPosn.y, ws->mViewPosn.z };
+    const Vec3 viewDir{ ws->mViewVector.x, ws->mViewVector.y, ws->mViewVector.z };
+    const float viewSphereRadius = drawDist * 0.5f;
+    const Vec3 viewSphereCenter = camPos + viewDir * viewSphereRadius;
+
+    // Camera view direction ray.
+    AddLine(camPos, camPos + viewDir * drawDist, Color::Yellow, false);
+
+    // Vision cone (SetVisCone / IsSphereInCone) projected onto y = 0.
+    if (ws->mViewCosSqr > 0.0f && ws->mViewCosSqr <= 1.0f && drawDist > 0.0f) {
+        const float xzLenSq = viewDir.x * viewDir.x + viewDir.z * viewDir.z;
+        if (xzLenSq > 1e-8f) {
+            const float invXzLen = 1.0f / std::sqrt(xzLenSq);
+            const float vx = viewDir.x * invXzLen;
+            const float vz = viewDir.z * invXzLen;
+
+            const float cosA = std::sqrt(ws->mViewCosSqr);
+            const float sinSq = 1.0f - ws->mViewCosSqr;
+            const float sinA = std::sqrt(sinSq > 0.0f ? sinSq : 0.0f);
+
+            const Vec3 originXZ{ camPos.x, 0.f, camPos.z };
+            const Vec3 leftDir{ vx * cosA - vz * sinA, 0.f, vz * cosA + vx * sinA };
+            const Vec3 rightDir{ vx * cosA + vz * sinA, 0.f, vz * cosA - vx * sinA };
+            const Vec3 leftEnd = originXZ + leftDir * drawDist;
+            const Vec3 rightEnd = originXZ + rightDir * drawDist;
+
+            AddLine(originXZ, leftEnd, Color::Orange, false);
+            AddLine(originXZ, rightEnd, Color::Orange, false);
+            AddLine(leftEnd, rightEnd, Color::Orange, false);
+        }
+
+        // SMALL_THING_CULL_DIST_SQR = 4000.0f cutoff ring for small objects (radius < 0.85f).
+        AddCircle(Vec3{ camPos.x, 0.f, camPos.z }, std::sqrt(4000.0f), Color::Orange, 16, false);
+    }
+
+    // B. Classify and draw all spatial tree nodes in pre-order.
+    int occludedSubtreeEnd = -1;
+    Vector3f sphereCenter(viewSphereCenter.x, viewSphereCenter.y, viewSphereCenter.z);
+
+    for (int i = 0; i < nodeCount; ++i) {
+        auto& binNode = binNodes.mpData[i];
         const tMark mark = ws->mStaticTreeWalker.mNodeMarks.mpData[i];
-        const SpatialNode& node = binNodes.mpData[i].mData;
+        const SpatialNode& node = binNode.mData;
+
+        const bool isOccludedRoot = (mark & SpatialTreeIter::msFilterInvisible) != 0;
+        if (isOccludedRoot) {
+            int subEnd = i + binNode.GetSubTreeSize();
+            if (subEnd >= nodeCount) subEnd = nodeCount - 1;
+            if (subEnd > occludedSubtreeEnd) occludedSubtreeEnd = subEnd;
+        }
+        const bool isInOccludedSubtree = (i <= occludedSubtreeEnd);
+        const bool isAlwaysVis = (mark & SpatialTreeIter::msFilterVisible) != 0;
+        const bool isCamMarked = (mark & WorldScene::msVisible0) != 0;
+
+        Bounds3f bounds = node.mBBox.mBounds;
+        const bool intersectsViewSphere = bounds.IntersectsSphere(sphereCenter, viewSphereRadius);
+        const int numRenderables = CountNodeRenderables(node);
+
+        uint32_t color = Color::DarkGrey;
+        if (isOccludedRoot)
+            color = Color::Magenta;
+        else if (isInOccludedSubtree)
+            color = Color::Red;
+        else if (isAlwaysVis)
+            color = Color::Cyan;
+        else if (isCamMarked && !intersectsViewSphere)
+            color = Color::Orange;
+        else if (isCamMarked && numRenderables > 0)
+            color = Color::Green;
+        else if (isCamMarked)
+            color = Color::White;
+        else if (numRenderables > 0)
+            color = Color::LightGrey;
+
         const float pos = node.mSubDivPlane.mPosn;
         const Axis axis = static_cast<Axis>(node.mSubDivPlane.mAxis);
-        const Vec3& min = reinterpret_cast<const Vec3&>(node.mBBox.mBounds.mMin);
-        const Vec3& max = reinterpret_cast<const Vec3&>(node.mBBox.mBounds.mMax);
-        uint32_t color = Color::Grey;
-        if (mark & 1)
-            color = Color::White;
+        const auto& min = reinterpret_cast<const Vec3&>(node.mBBox.mBounds.mMin);
+        const auto& max = reinterpret_cast<const Vec3&>(node.mBBox.mBounds.mMax);
 
-        if (axis == X)
+        if (axis == X) {
             AddLine(Vec3{ pos, 0.f, min.z }, Vec3{ pos, 0.f, max.z }, color, false);
-        else if (axis == Z)
+        } else if (axis == Z) {
             AddLine(Vec3{ min.x, 0.f, pos }, Vec3{ max.x, 0.f, pos }, color, false);
-        else if (axis == LEAF) {
-            D3DXVECTOR3 mid = (min + max) / 2.f;
+        } else if (axis == LEAF) {
+            Vec3 mid = (min + max) * 0.5f;
             mid.y = 0.f;
-            AddPlus(mid, 0.f, 2.f, Color::White, false);
+            AddPlus(mid, 0.f, 2.f, color, false);
+
+            if ((isCamMarked || isAlwaysVis) && numRenderables > 0) {
+                const float inset = 0.5f;
+                if (max.x - min.x > inset * 2.f && max.z - min.z > inset * 2.f) {
+                    AddRectXZ(min.x + inset, min.z + inset, max.x - inset, max.z - inset, 0.f, color, false);
+                }
+            }
+            if (isInOccludedSubtree) {
+                AddLine(Vec3{ mid.x - 1.5f, 0.f, mid.z - 1.5f }, Vec3{ mid.x + 1.5f, 0.f, mid.z + 1.5f }, Color::Red, false);
+                AddLine(Vec3{ mid.x - 1.5f, 0.f, mid.z + 1.5f }, Vec3{ mid.x + 1.5f, 0.f, mid.z - 1.5f }, Color::Red, false);
+            }
+        }
+
+        // Highlight Root Node (Node 0) if overflow elements fell back into it.
+        if (i == 0 && numRenderables > 0) {
+            AddRectXZ(min.x, min.z, max.x, max.z, 0.f, Color::Purple, false);
+        }
+    }
+
+    // C. Highlight Player 0 position and the spatial leaf containing the player.
+    if (GetAvatarManager()) {
+        if (Avatar* av = GetAvatarManager()->GetAvatarForPlayer(0)) {
+            if (av->IsInCar() ? (av->GetVehicle() != nullptr) : (av->GetCharacter() != nullptr)) {
+                rmt::Vector p;
+                av->GetPosition(p);
+                Vec3 playerGround{ p.x, 0.f, p.z };
+                AddPlus(playerGround, 0.f, 2.5f, Color::Magenta, false);
+                AddCircle(playerGround, 3.0f, Color::Magenta, 16, false);
+
+                Vector3f seekPt(p.x, p.y, p.z);
+                const SpatialNode& playerLeaf = const_cast<WorldScene*>(ws)->mStaticTreeWalker.rSeekLeaf(seekPt);
+                const auto& lmin = reinterpret_cast<const Vec3&>(playerLeaf.mBBox.mBounds.mMin);
+                const auto& lmax = reinterpret_cast<const Vec3&>(playerLeaf.mBBox.mBounds.mMax);
+                const float inset = 0.75f;
+                if (lmax.x - lmin.x > inset * 2.f && lmax.z - lmin.z > inset * 2.f) {
+                    AddRectXZ(lmin.x + inset, lmin.z + inset, lmax.x - inset, lmax.z - inset, 0.f, Color::Magenta, false);
+                } else {
+                    AddRectXZ(lmin.x, lmin.z, lmax.x, lmax.z, 0.f, Color::Magenta, false);
+                }
+            }
         }
     }
 }

@@ -1,43 +1,57 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.187.0/+esm'
-import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.187.0/addons/controls/OrbitControls.js/+esm'
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/controls/OrbitControls.js/+esm'
 
-const adapter = await navigator.gpu.requestAdapter()
+const MAX_VERTICES = 100_000
+const VERTEX_STRIDE = 16
+
+const adapter = await navigator.gpu?.requestAdapter()
+if (!adapter) throw new Error('WebGPU adapter not available')
 const device = await adapter.requestDevice()
+
 const canvas = document.querySelector('canvas')
 const context = canvas.getContext('webgpu')
 const format = navigator.gpu.getPreferredCanvasFormat()
 context.configure({ device, format })
 
-canvas.width = window.innerWidth
-canvas.height = window.innerHeight
+canvas.width = Math.max(1, window.innerWidth)
+canvas.height = Math.max(1, window.innerHeight)
 
 const cameraData = new Float32Array(32)
 const camera = new THREE.PerspectiveCamera(75., canvas.width / canvas.height, .1, 100_000.)
-camera.position.set(0., 1_000., 0.)
+camera.position.set(0., 1_000., 0.01)
 camera.lookAt(0., 0., 0.)
 const control = new OrbitControls(camera, canvas)
 control.target.set(0., 0., 0.)
 
+window.addEventListener('resize', () => {
+    canvas.width = Math.max(1, window.innerWidth)
+    canvas.height = Math.max(1, window.innerHeight)
+    camera.aspect = canvas.width / canvas.height
+    camera.updateProjectionMatrix()
+})
+
 let vertexCount = 2
-const lines = [ 1., 0.,  0., 0x00ff00ff,
-               -1., 0.,  0., 0x00ff00ff, ]
+const lines = [
+     1., 0., 0., 0x00ff00ff,
+    -1., 0., 0., 0x00ff00ff,
+]
 const vertexData = new ArrayBuffer(lines.length * 4)
 const vertexView = new DataView(vertexData)
 for (let i = 0; i < lines.length; ++i) {
-    if ((i + 1) % 4 == 0) vertexView.setUint32(i * 4, lines[i], true)
+    if ((i + 1) % 4 === 0) vertexView.setUint32(i * 4, lines[i], true)
     else vertexView.setFloat32(i * 4, lines[i], true)
 }
 
 const vertexBuffer = device.createBuffer({
     label: 'lines',
-    size: 1_00_000 * 4 * 4,
+    size: MAX_VERTICES * VERTEX_STRIDE,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.VERTEX
 })
 device.queue.writeBuffer(vertexBuffer, 0, vertexData)
 
 const uniformBuffer = device.createBuffer({
     label: 'uniform',
-    size: 64 * 64,
+    size: 128,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM
 })
 
@@ -77,10 +91,10 @@ const pipeline = device.createRenderPipeline({
         module,
         entryPoint: 'vs_main',
         buffers: [{
-            arrayStride: 4*3 + 4,
+            arrayStride: VERTEX_STRIDE,
             attributes: [
                 { shaderLocation: 0, offset: 0, format: 'float32x3' },
-                { shaderLocation: 1, offset: 4*3, format: 'uint32' },
+                { shaderLocation: 1, offset: 4 * 3, format: 'uint32' },
             ]
         }]
     },
@@ -98,7 +112,7 @@ const renderPassDescriptor = {
     colorAttachments: [{
         loadOp: 'clear',
         storeOp: 'store',
-        clearValue: [ .1, .1, .1, 1. ],
+        clearValue: [ .0, .0, .0, 1. ],
         view: undefined
     }]
 }
@@ -116,11 +130,11 @@ function frame() {
     pass.setPipeline(pipeline)
     pass.setBindGroup(0, bindGroup)
     pass.setVertexBuffer(0, vertexBuffer)
-    pass.draw(vertexCount)
+    if (vertexCount > 0) pass.draw(vertexCount)
     pass.end()
 
     device.queue.submit([ encoder.finish() ])
-    
+
     requestAnimationFrame(frame)
 }
 
@@ -129,10 +143,13 @@ requestAnimationFrame(frame)
 const socket = new WebSocket(`ws://${location.hostname}:9001`)
 socket.binaryType = 'arraybuffer'
 socket.onmessage = e => {
-    if (e.data instanceof ArrayBuffer) {
-        const view = new DataView(e.data)
-        vertexCount = view.getUint32(0, true)
-        device.queue.writeBuffer(vertexBuffer, 0, e.data.slice(4))
+    if (!(e.data instanceof ArrayBuffer) || e.data.byteLength < 4) return
+    const view = new DataView(e.data)
+    const rawCount = view.getUint32(0, true)
+    const maxAvailable = Math.floor((e.data.byteLength - 4) / VERTEX_STRIDE)
+    vertexCount = Math.min(rawCount, maxAvailable, MAX_VERTICES)
+    if (vertexCount > 0) {
+        device.queue.writeBuffer(vertexBuffer, 0, e.data, 4, vertexCount * VERTEX_STRIDE)
     }
 }
 socket.onerror = err => {
